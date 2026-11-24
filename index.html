@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gymapp">
+<meta name="theme-color" content="#111418">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-512.png">
+<title>Gymapp</title>
+<style>
+:root{--bg:#111418;--card:#1c2128;--tx:#e8eaed;--mut:#8b949e;--ac:#3fb950;--rd:#f85149}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px -apple-system,system-ui,sans-serif;padding-top:env(safe-area-inset-top)}
+main{padding:14px 14px 100px;max-width:560px;margin:auto}
+h1{font-size:22px;margin:6px 0 14px}
+.card{background:var(--card);border-radius:12px;padding:12px;margin-bottom:12px}
+button{font:inherit;border:0;border-radius:10px;padding:10px 14px;background:#2d333b;color:var(--tx)}
+button.p{background:var(--ac);color:#04260f;font-weight:600}
+button.d{color:var(--rd)}
+button.w{width:100%;margin-top:6px}
+input{font:inherit;background:#0d1117;color:var(--tx);border:1px solid #30363d;border-radius:8px;padding:9px;width:100%;min-width:0}
+.row{display:flex;gap:8px;align-items:center;margin:8px 0}
+.mut{color:var(--mut);font-size:13px}
+.set{display:grid;grid-template-columns:22px 1.2fr 1fr 1fr .8fr 34px;gap:6px;align-items:center;margin:6px 0}
+.set input{text-align:center;padding:8px 4px}
+#tabs{position:fixed;bottom:0;left:0;right:0;display:flex;background:#161b22;border-top:1px solid #30363d;padding-bottom:env(safe-area-inset-bottom)}
+#tabs button{flex:1;background:none;border-radius:0;padding:14px 4px;color:var(--mut);font-size:14px}
+#tabs button.on{color:var(--ac)}
+</style></head><body>
+<main id="app"></main><nav id="tabs"></nav>
+<script>
+const $=s=>document.querySelector(s);
+const uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const p2=n=>String(n).padStart(2,'0');
+const fmt=ms=>{const s=Math.floor(ms/1000),h=Math.floor(s/3600),m=Math.floor(s%3600/60);return (h?h+':'+p2(m):m)+':'+p2(s%60)};
+const DEF=['Wyciskanie sztangi leżąc','Wyciskanie hantli na skosie','Rozpiętki','Wyciskanie żołnierskie','Wznosy bokiem','Podciąganie na drążku','Wiosłowanie sztangą','Ściąganie drążka górnego','Martwy ciąg','Przysiad ze sztangą','Wykroki','Wyciskanie na suwnicy','Uginanie nóg leżąc','Wspięcia na palce','Uginanie ramion ze sztangą','Uginanie młotkowe','Prostowanie ramion na wyciągu','Wyciskanie francuskie','Plank','Brzuszki'];
+let db;
+try{db=JSON.parse(localStorage.getItem('gymapp'))}catch(e){}
+if(!db||!db.workouts)db={exercises:DEF.map(n=>({id:uid(),name:n})),workouts:[],active:null};
+const save=()=>{try{localStorage.setItem('gymapp',JSON.stringify(db))}catch(e){alert('Nie udało się zapisać danych')}};
+let tab='t',picker=false,openW=null;
+
+function prev(id){for(let i=db.workouts.length-1;i>=0;i--){const it=db.workouts[i].items.find(x=>x.exId===id);if(it)return it.sets}return[]}
+
+function vT(){
+ const a=db.active;
+ if(!a)return '<h1>Trening</h1><button class="p w" onclick="start()">Rozpocznij trening</button>';
+ let h=`<h1>Trening <span id="tm" class="mut">${fmt(Date.now()-a.start)}</span></h1>`;
+ a.items.forEach((it,i)=>{
+  const pv=prev(it.exId);
+  h+=`<div class="card"><div class="row"><b style="flex:1">${esc(it.name)}</b><button class="d" onclick="rmEx(${i})">✕</button></div>
+  <div class="set mut"><span>#</span><span>Poprzednio</span><span>kg</span><span>powt.</span><span>RPE</span><span></span></div>`;
+  it.sets.forEach((s,j)=>{
+   const p=pv[j];
+   h+=`<div class="set"><span class="mut">${j+1}</span><span class="mut">${p?esc(p.weight)+'×'+esc(p.reps):'–'}</span>
+   <input type="number" inputmode="decimal" value="${esc(s.weight)}" oninput="sv(${i},${j},'weight',this.value)">
+   <input type="number" inputmode="numeric" value="${esc(s.reps)}" oninput="sv(${i},${j},'reps',this.value)">
+   <input type="number" inputmode="decimal" value="${esc(s.rpe)}" placeholder="–" oninput="sv(${i},${j},'rpe',this.value)">
+   <button class="d" style="padding:6px" onclick="rmSet(${i},${j})">−</button></div>`;
+  });
+  h+=`<button class="w" onclick="addSet(${i})">+ Seria</button>
+  <div class="row"><input placeholder="Notatka do ćwiczenia" value="${esc(it.note)}" oninput="sn(${i},this.value)"></div></div>`;
+ });
+ if(picker){
+  const l=db.exercises.slice().sort((x,y)=>x.name.localeCompare(y.name,'pl')).map(e=>`<button class="w ex" data-n="${esc(e.name.toLowerCase())}" onclick="addEx('${e.id}')">${esc(e.name)}</button>`).join('');
+  h+=`<div class="card"><input id="q" placeholder="Szukaj lub wpisz nową nazwę" oninput="filt(this.value)">
+  <button class="w p" onclick="fromSearch()">+ Utwórz własne z tej nazwy</button><div id="pl">${l}</div><button class="w d" onclick="pk()">Zamknij</button></div>`;
+ }else h+='<button class="w" onclick="pk()">+ Dodaj ćwiczenie</button>';
+ return h+'<div class="row"><button class="d" onclick="cancel()">Anuluj</button><button class="p" style="flex:1" onclick="finish()">Zakończ trening</button></div>';
+}
+function vH(){
+ if(!db.workouts.length)return '<h1>Historia</h1><p class="mut">Brak zapisanych treningów.</p>';
+ return '<h1>Historia</h1>'+db.workouts.slice().reverse().map(w=>{
+  const d=new Date(w.start).toLocaleDateString('pl-PL',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+  let det='';
+  if(openW===w.id)det=w.items.map(i=>`<div style="margin-top:8px"><b>${esc(i.name)}</b>${i.note?`<div class="mut">${esc(i.note)}</div>`:''}<div class="mut">${i.sets.map(s=>`${esc(s.weight||0)} kg × ${esc(s.reps||0)}${s.rpe?' (RPE '+esc(s.rpe)+')':''}`).join(' · ')}</div></div>`).join('')+`<button class="w d" onclick="delW('${w.id}')">Usuń trening</button>`;
+  return `<div class="card"><div onclick="tg('${w.id}')"><b>${d}</b> <span class="mut">· ${fmt(w.end-w.start)} · ${w.items.length} ćw.</span><div class="mut">${w.items.map(i=>esc(i.name)).join(', ')}</div></div>${det}</div>`;
+ }).join('');
+}
+function vE(){
+ return `<h1>Ćwiczenia</h1><div class="row"><input id="ne" placeholder="Nowe własne ćwiczenie"><button class="p" onclick="addCustom()">Dodaj</button></div>`+
+ db.exercises.slice().sort((x,y)=>x.name.localeCompare(y.name,'pl')).map(e=>`<div class="card row" style="margin:0 0 8px"><span style="flex:1">${esc(e.name)}</span><button class="d" onclick="delEx('${e.id}')">✕</button></div>`).join('');
+}
+function vK(){
+ return `<h1>Kopia zapasowa</h1><p class="mut">Dane są zapisane tylko w tym telefonie. Rób kopię regularnie, bo usunięcie danych Safari lub aplikacji skasuje historię.</p>
+ <button class="p w" onclick="exp()">Eksportuj kopię (plik)</button>
+ <p class="mut">Wczytaj kopię:</p><input type="file" accept="application/json,.json" onchange="imp(this)">`;
+}
+function render(){
+ $('#tabs').innerHTML=[['t','Trening'],['h','Historia'],['e','Ćwiczenia'],['k','Kopia']].map(([k,n])=>`<button class="${tab===k?'on':''}" onclick="go('${k}')">${n}</button>`).join('');
+ $('#app').innerHTML={t:vT,h:vH,e:vE,k:vK}[tab]();
+}
+function go(t){tab=t;picker=false;render()}
+function start(){db.active={start:Date.now(),items:[]};save();render()}
+function cancel(){if(confirm('Anulować trening? Dane z tego treningu przepadną.')){db.active=null;picker=false;save();render()}}
+function finish(){
+ const a=db.active;
+ const items=a.items.map(i=>({...i,sets:i.sets.filter(s=>s.weight!==''||s.reps!=='')})).filter(i=>i.sets.length);
+ if(!items.length){alert('Dodaj przynajmniej jedną wypełnioną serię.');return}
+ db.workouts.push({id:uid(),start:a.start,end:Date.now(),items});
+ db.active=null;picker=false;save();tab='h';render();
+}
+function pk(){picker=!picker;render()}
+function addSet(i){
+ const it=db.active.items[i];
+ const src=it.sets[it.sets.length-1]||prev(it.exId)[0]||{};
+ it.sets.push({weight:src.weight||'',reps:src.reps||'',rpe:''});
+ save();render();
+}
+function addEx(id){
+ const e=db.exercises.find(x=>x.id===id);
+ db.active.items.push({exId:id,name:e.name,note:'',sets:[]});
+ picker=false;addSet(db.active.items.length-1);
+}
+function fromSearch(){
+ const n=$('#q').value.trim();if(!n)return;
+ let e=db.exercises.find(x=>x.name.toLowerCase()===n.toLowerCase());
+ if(!e){e={id:uid(),name:n};db.exercises.push(e)}
+ addEx(e.id);
+}
+function filt(v){v=v.toLowerCase();document.querySelectorAll('#pl .ex').forEach(b=>b.style.display=b.dataset.n.includes(v)?'':'none')}
+function sv(i,j,k,v){db.active.items[i].sets[j][k]=v;save()}
+function sn(i,v){db.active.items[i].note=v;save()}
+function rmEx(i){db.active.items.splice(i,1);save();render()}
+function rmSet(i,j){db.active.items[i].sets.splice(j,1);save();render()}
+function addCustom(){const n=$('#ne').value.trim();if(!n)return;db.exercises.push({id:uid(),name:n});save();render()}
+function delEx(id){if(confirm('Usunąć ćwiczenie z listy? Historia zostanie zachowana.')){db.exercises=db.exercises.filter(x=>x.id!==id);save();render()}}
+function tg(id){openW=openW===id?null:id;render()}
+function delW(id){if(confirm('Usunąć ten trening?')){db.workouts=db.workouts.filter(w=>w.id!==id);openW=null;save();render()}}
+async function exp(){
+ const f=new File([JSON.stringify(db)],'gymapp-kopia-'+new Date().toISOString().slice(0,10)+'.json',{type:'application/json'});
+ try{if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f]});return}}catch(e){if(e.name==='AbortError')return}
+ const a=document.createElement('a');a.href=URL.createObjectURL(f);a.download=f.name;a.click();
+}
+function imp(inp){
+ const f=inp.files[0];if(!f)return;
+ const r=new FileReader();
+ r.onload=()=>{try{
+  const d=JSON.parse(r.result);
+  if(!Array.isArray(d.workouts)||!Array.isArray(d.exercises))throw 0;
+  if(!confirm('Zastąpić obecne dane danymi z kopii?'))return;
+  db=d;save();render();alert('Wczytano kopię.');
+ }catch(e){alert('Nieprawidłowy plik kopii.')}};
+ r.readAsText(f);
+}
+setInterval(()=>{const t=$('#tm');if(t&&db.active)t.textContent=fmt(Date.now()-db.active.start)},1000);
+if(navigator.storage&&navigator.storage.persist)navigator.storage.persist();
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+render();
+</script></body></html>
